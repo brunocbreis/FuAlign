@@ -2,6 +2,8 @@ from dataclasses import dataclass
 import tkinter as tk
 from fa_backend import Tool, Comp, Fusion
 
+NEG_MILL = -1_000_000
+
 
 def initialize_fake_fusion():
     print("Initializing fake Fusion.")
@@ -45,11 +47,11 @@ class Align:
 
     @property
     def rel_width(self):
-        return self.pixel_width / self.merge_pixel_width
+        return self.pixel_width * self.merge_size / self.merge_pixel_width
 
     @property
     def rel_height(self):
-        return self.pixel_height / self.merge_pixel_height
+        return self.pixel_height * self.merge_size / self.merge_pixel_height
 
     @property
     def current_position(self) -> tuple[float, float]:
@@ -80,35 +82,83 @@ class Align:
         return self.merge.GetAttrs("TOOLI_ImageHeight")
 
     @property
+    def merge_size(self) -> float:
+        return self.merge.GetInput("Size")
+
+    @property
+    def merge_center_coords(self) -> tuple[int, int]:
+        x = self.merge_pixel_width / 2
+        y = self.merge_pixel_height / 2
+
+        return int(x), int(y)
+
+    @property
+    def tool_center_coords(self) -> tuple[float, float]:
+        if self.data_window:
+            x0, y0, x1, y1 = self.data_window.values()
+        else:
+            print(
+                f"It looks like {self.fg_tool.GetAttrs('TOOLS_Name')} is off screen. Alignment might not work properly."
+            )
+            x0, y0 = 0, 0
+
+        x = self.pixel_width / 2 + x0
+        y = self.pixel_height / 2 + y0
+
+        # Normalized...
+        x = x / self.merge_pixel_width
+        y = y / self.merge_pixel_height
+
+        return x, y
+
+    @property
     def data_window(self) -> dict[int, int] | None:
-        return self.fg_tool.Output.GetValue().DataWindow
+        dw = self.fg_tool.Output.GetValue().DataWindow
+        if dw == {1: NEG_MILL, 2: NEG_MILL, 3: NEG_MILL, 4: NEG_MILL}:
+            return None
+        if not dw:
+            return None
+        return dw
 
     @property
     def edges(self) -> dict[str, float]:
-        x0, y0, x1, y1 = self.data_window.values()
-
         edges = {}
-        edges["top"] = y1 / self.merge_pixel_height
-        edges["left"] = x0 / self.merge_pixel_width
-        edges["bottom"] = y0 / self.merge_pixel_height
-        edges["right"] = x1 / self.merge_pixel_width
+        x, y = self.tool_center_coords
+        edges["top"] = y + self.rel_height / 2
+        edges["left"] = x - self.rel_width / 2
+        edges["bottom"] = y - self.rel_height / 2
+        edges["right"] = x + self.rel_width / 2
 
         return edges
 
 
 # Align left
-def align_left(tool: Tool, merge: Tool, edge: float = 0) -> None:
-    y = merge.GetInput("Center")[2]
-    x = edge + get_rel_width(tool, merge) / 2
+def align_left(object: Align, edge: float) -> None:
+    x = edge + object.rel_width / 2  # + object.current_offset[0]
+    y = object.merge.GetInput("Center")[2]
 
-    merge.SetInput("Center", [x, y])
+    object.merge.SetInput("Center", [x, y])
 
 
-def align_right(tool: Tool, merge: Tool, edge: float = 0) -> None:
-    y = merge.GetInput("Center")[2]
-    x = edge - get_rel_width(tool, merge) / 2
+def align_right(object: Align, edge: float) -> None:
+    x = edge - object.rel_width / 2  # + object.current_offset[0]
+    y = object.merge.GetInput("Center")[2]
 
-    merge.SetInput("Center", [x, y])
+    object.merge.SetInput("Center", [x, y])
+
+
+def align_top(object: Align, edge: float) -> None:
+    x = object.merge.GetInput("Center")[1]
+    y = edge - object.rel_height / 2  # - object.current_offset[1]
+
+    object.merge.SetInput("Center", [x, y])
+
+
+def align_bottom(object: Align, edge: float) -> None:
+    x = object.merge.GetInput("Center")[1]
+    y = edge + object.rel_height / 2  # - object.current_offset[1]
+
+    object.merge.SetInput("Center", [x, y])
 
 
 # Data Window: {1: x0, 2: y0, 3: x1, 4: y1}
@@ -118,55 +168,51 @@ def align_right(tool: Tool, merge: Tool, edge: float = 0) -> None:
 # comp.Merge1.Foreground.GetConnectedOutput().GetValue().Height
 
 
-def main_left():
+def align_all(key: str):
+    if key not in ["top", "left", "bottom", "right"]:
+        print("Please select a correct key.")
+        return
+
     global comp
 
     selected_merges = comp.GetToolList(True, "Merge").values()
 
     if not selected_merges:
-        print("no Merges have been selected")
-        return None
+        print("No selected merges.")
+        return
 
-    tools = [get_tool(merge) for merge in selected_merges]
+    align_objects = [Align(merge) for merge in selected_merges]
 
-    left_edges = [
-        get_left_edge(tool, merge) for tool, merge in zip(tools, selected_merges)
-    ]
+    if key in ["top", "right"]:
+        edge = max([object.edges[key] for object in align_objects])
 
-    leftmost_edge = min(left_edges)
+        for obj in align_objects:
+            if key == "right":
+                align_right(obj, edge)
+            else:
+                align_top(obj, edge)
 
-    for tool, merge in zip(tools, selected_merges):
-        align_left(tool, merge, leftmost_edge)
+    else:
+        edge = min([object.edges[key] for object in align_objects])
 
-
-def main_right():
-    global comp
-
-    selected_merges = comp.GetToolList(True, "Merge").values()
-
-    if not selected_merges:
-        print("no Merges have been selected")
-        return None
-
-    tools = [get_tool(merge) for merge in selected_merges]
-
-    right_edges = [
-        get_right_edge(tool, merge) for tool, merge in zip(tools, selected_merges)
-    ]
-
-    rightmost_edge = max(right_edges)
-
-    for tool, merge in zip(tools, selected_merges):
-        align_right(tool, merge, rightmost_edge)
+        for obj in align_objects:
+            if key == "left":
+                align_left(obj, edge)
+            else:
+                align_bottom(obj, edge)
 
 
 class App:
     def run(self):
         root = tk.Tk()
-        button = tk.Button(root, text="Align left", command=main_left)
+        button = tk.Button(
+            root, text="Align left", command=lambda key="left": align_all(key)
+        )
         button.pack(padx=30, pady=30)
 
-        button2 = tk.Button(root, text="Align right", command=main_right)
+        button2 = tk.Button(
+            root, text="Align right", command=lambda key="right": align_all(key)
+        )
         button2.pack(padx=30, pady=30)
 
         root.attributes("-topmost", True)
