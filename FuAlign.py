@@ -1,81 +1,114 @@
+from dataclasses import dataclass
 import tkinter as tk
+from fa_backend import Tool, Comp, Fusion
 
 
-# Dims with DataWindow
-def get_pixel_width(tool) -> int:
-    data_window = tool.Output.GetValue().DataWindow
-    if not data_window:
-        return tool.GetAttrs("TOOLI_ImageWidth")
-
-    x0, y0, x1, y1 = data_window.values()
-    return x1 - x0
+def initialize_fake_fusion():
+    print("Initializing fake Fusion.")
+    global fusion, comp
+    fusion = Fusion()
+    comp = Comp()
 
 
-def get_pixel_height(tool) -> int:
-    data_window = tool.Output.GetValue().DataWindow
-    if not data_window:
-        return tool.GetAttrs("TOOLI_ImageHeight")
+try:
+    print(fusion)
+except NameError:
+    initialize_fake_fusion()
 
-    x0, y0, x1, y1 = data_window.values()
-    return y1 - y0
-
-
-# Rel dims
-def get_rel_width(tool, merge) -> float:
-    size = merge.GetInput("Size")
-    rel_width = get_pixel_width(tool) * size / merge.GetAttrs("TOOLI_ImageWidth")
-    print(rel_width)
-    return rel_width
+# Get tool from merge
+def get_tool(merge: Tool):
+    return merge.Foreground.GetConnectedOutput().GetTool()
 
 
-def get_rel_height(tool, merge) -> float:
-    size = merge.GetInput("Size")
-    return get_pixel_height(tool) * size / merge.GetAttrs("TOOLI_ImageHeight")
+@dataclass
+class Align:
+    merge: Tool
 
+    def __post_init__(self):
+        self.fg_tool = get_tool(self.merge)
 
-# Edges
-def get_top_edge(tool, merge) -> float:
-    height = get_rel_height(tool, merge)
+    @property
+    def pixel_width(self) -> int:
+        if not self.data_window:
+            return self.fg_tool.GetAttrs("TOOLI_ImageWidth")
 
-    return merge.GetInput("Center")[2] + height / 2
+        x0, y0, x1, y1 = self.data_window.values()
+        return x1 - x0
 
+    @property
+    def pixel_height(self) -> int:
+        if not self.data_window:
+            return self.fg_tool.GetAttrs("TOOLI_ImageHeight")
 
-def get_left_edge(tool, merge) -> float:
-    width = get_rel_width(tool, merge)
+        x0, y0, x1, y1 = self.data_window.values()
+        return y1 - y0
 
-    return merge.GetInput("Center")[1] - width / 2
+    @property
+    def rel_width(self):
+        return self.pixel_width / self.merge_pixel_width
 
+    @property
+    def rel_height(self):
+        return self.pixel_height / self.merge_pixel_height
 
-def get_bottom_edge(tool, merge) -> float:
-    height = get_rel_height(tool, merge)
+    @property
+    def current_position(self) -> tuple[float, float]:
+        """Returns current tool position relative to Merge (0.5, 0.5) is the center"""
+        if not self.data_window:
+            return 0.5, 0.5
 
-    return merge.GetInput("Center")[2] - height / 2
+        x_px = self.pixel_width / 2
+        y_px = self.pixel_height / 2
 
+        x = x_px / self.merge_pixel_width
+        y = y_px / self.merge_pixel_height
 
-def get_right_edge(tool, merge) -> float:
-    width = get_rel_width(tool, merge)
+        return x, y
 
-    return merge.GetInput("Center")[1] + width / 2
+    @property
+    def current_offset(self) -> tuple[float, float]:
+        """Returns current node offset in relation to the Merge center point"""
+        x_offset, y_offset = [0.5 - pos for pos in self.current_position]
+        return x_offset, y_offset
+
+    @property
+    def merge_pixel_width(self) -> int:
+        return self.merge.GetAttrs("TOOLI_ImageWidth")
+
+    @property
+    def merge_pixel_height(self) -> int:
+        return self.merge.GetAttrs("TOOLI_ImageHeight")
+
+    @property
+    def data_window(self) -> dict[int, int] | None:
+        return self.fg_tool.Output.GetValue().DataWindow
+
+    @property
+    def edges(self) -> dict[str, float]:
+        x0, y0, x1, y1 = self.data_window.values()
+
+        edges = {}
+        edges["top"] = y1 / self.merge_pixel_height
+        edges["left"] = x0 / self.merge_pixel_width
+        edges["bottom"] = y0 / self.merge_pixel_height
+        edges["right"] = x1 / self.merge_pixel_width
+
+        return edges
 
 
 # Align left
-def align_left(tool, merge, edge: float = 0) -> None:
+def align_left(tool: Tool, merge: Tool, edge: float = 0) -> None:
     y = merge.GetInput("Center")[2]
     x = edge + get_rel_width(tool, merge) / 2
 
     merge.SetInput("Center", [x, y])
 
 
-def align_right(tool, merge, edge: float = 0) -> None:
+def align_right(tool: Tool, merge: Tool, edge: float = 0) -> None:
     y = merge.GetInput("Center")[2]
     x = edge - get_rel_width(tool, merge) / 2
 
     merge.SetInput("Center", [x, y])
-
-
-# Get tool from merge
-def get_tool(merge):
-    return merge.Foreground.GetConnectedOutput().GetTool()
 
 
 # Data Window: {1: x0, 2: y0, 3: x1, 4: y1}
@@ -127,13 +160,19 @@ def main_right():
         align_right(tool, merge, rightmost_edge)
 
 
+class App:
+    def run(self):
+        root = tk.Tk()
+        button = tk.Button(root, text="Align left", command=main_left)
+        button.pack(padx=30, pady=30)
+
+        button2 = tk.Button(root, text="Align right", command=main_right)
+        button2.pack(padx=30, pady=30)
+
+        root.attributes("-topmost", True)
+        root.mainloop()
+
+
 if __name__ == "__main__":
-    root = tk.Tk()
-    button = tk.Button(root, text="Align left", command=main_left)
-    button.pack(padx=30, pady=30)
-
-    button2 = tk.Button(root, text="Align right", command=main_right)
-    button2.pack(padx=30, pady=30)
-
-    root.attributes("-topmost", True)
-    root.mainloop()
+    app = App()
+    app.run()
