@@ -23,13 +23,6 @@ def get_tool(merge: Tool):
     return merge.Foreground.GetConnectedOutput().GetTool()
 
 
-# 1. tool center point in self data window
-# 2. tool center OFFSET in self data window (subtract .5)
-# 3. tool rel dimensions
-# 4. tool center offset in merge: current offset * rel dimensions
-# na hora de posicionar, só acrescentar os valores do 4.
-
-
 @dataclass
 class Align:
     merge: Tool
@@ -161,10 +154,6 @@ class Align:
         edges["bottom"] = y - self.tool_rel_height / 2
         edges["right"] = x + self.tool_rel_width / 2
 
-        name = self.merge.GetAttrs("TOOLS_Name")
-
-        print(f"{name} edges: {edges} ")
-
         return edges
 
 
@@ -233,18 +222,35 @@ def align_all(key: str):
     comp.Unlock()
 
 
+def create_buttons(root: tk.Tk, directions: list[str]) -> dict[str, tk.Button]:
+    buttons = {}
+
+    for direction in directions:
+        button = tk.Button(
+            root,
+            text=f"Align {direction}",
+            command=lambda key=direction: align_all(key),
+        )
+        buttons[direction] = button
+    return buttons
+
+
 class App:
     def run(self):
         root = tk.Tk()
-        button = tk.Button(
-            root, text="Align left", command=lambda key="left": align_all(key)
-        )
-        button.pack(padx=30, pady=30)
+        root.title("FuAlign")
+        horizontal = tk.Frame(root)
 
-        button2 = tk.Button(
-            root, text="Align right", command=lambda key="right": align_all(key)
-        )
-        button2.pack(padx=30, pady=30)
+        buttons = create_buttons(root, ["top", "bottom"])
+        buttons["left"], buttons["right"] = create_buttons(
+            horizontal, ["left", "right"]
+        ).values()
+
+        buttons["top"].pack(padx=30, pady=30)
+        horizontal.pack()
+        buttons["left"].grid(padx=30, pady=30, column=1, row=1)
+        buttons["right"].grid(padx=30, pady=30, column=2, row=1)
+        buttons["bottom"].pack(padx=30, pady=30)
 
         root.attributes("-topmost", True)
         root.mainloop()
