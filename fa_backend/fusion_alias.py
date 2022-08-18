@@ -101,6 +101,12 @@ class Comp:
     def GetToolList(self, selected: bool, type: str = "") -> dict[int, Tool]:
         return self._list_of_tools
 
+    def Lock(self):
+        pass
+
+    def Unlock(self):
+        pass
+
 
 class Flow:
     def QueueSetPos(self, tool: Tool, x: int, y: int) -> None:
