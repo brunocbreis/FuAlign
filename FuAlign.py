@@ -1,6 +1,7 @@
 from __future__ import annotations
 from dataclasses import dataclass
 import tkinter as tk
+from typing import Callable
 
 # For testing inside VSCode.
 try:
@@ -26,10 +27,6 @@ def get_tool(merge: Tool):
     return merge.Foreground.GetConnectedOutput().GetTool()
 
 
-def get_merges(comp: Comp) -> list[Tool]:
-    return comp.GetToolList(True, "Merge").values()
-
-
 @dataclass
 class Align:
     merge: Tool
@@ -47,18 +44,18 @@ class Align:
 
     @property
     def tool_img_pixel_width(self) -> int:
-        if not self.data_window:
+        if not self.tool_data_window:
             return self.tool_pixel_width
 
-        x0, y0, x1, y1 = self.data_window.values()
+        x0, y0, x1, y1 = self.tool_data_window.values()
         return x1 - x0
 
     @property
     def tool_img_pixel_height(self) -> int:
-        if not self.data_window:
+        if not self.tool_data_window:
             return self.tool_pixel_height
 
-        x0, y0, x1, y1 = self.data_window.values()
+        x0, y0, x1, y1 = self.tool_data_window.values()
         return y1 - y0
 
     @property
@@ -87,8 +84,8 @@ class Align:
         If its image information is only a fraction of its width, this method will return
         where in the screen this information is centered. Else, we get the default 0.5, 0.5 values.
         """
-        if self.data_window:
-            x0, y0, x1, y1 = self.data_window.values()
+        if self.tool_data_window:
+            x0, y0, x1, y1 = self.tool_data_window.values()
         else:
             print(
                 f"It looks like {self.fg_tool.GetAttrs('TOOLS_Name')} is off screen. Alignment might not work properly."
@@ -133,7 +130,7 @@ class Align:
         return rel_x, rel_y
 
     @property
-    def data_window(self) -> dict[int, int] | None:
+    def tool_data_window(self) -> dict[int, int] | None:
         dw = self.fg_tool.Output.GetValue().DataWindow
         if dw == EMPTY_DATA_WINDOW:
             return None
@@ -142,91 +139,115 @@ class Align:
         return dw
 
     @property
-    def current_x(self):
+    def merge_current_x(self):
         return self.merge.GetInput("Center")[1]
 
     @property
-    def current_y(self):
+    def merge_current_y(self):
         return self.merge.GetInput("Center")[2]
 
     @property
-    def edges(self) -> dict[str, float]:
+    def edges_and_centers(self) -> dict[str, float]:
         """Returns normalized edge positions (top, left, bottom, right) for tool in merge"""
-        edges = {}
+        edges_and_centers = {}
         x_offset, y_offset = self.tool_offset_in_merge
-        x = x_offset + self.current_x
-        y = y_offset + self.current_y
+        x = x_offset + self.merge_current_x
+        y = y_offset + self.merge_current_y
 
-        edges["top"] = y + self.tool_rel_height / 2
-        edges["left"] = x - self.tool_rel_width / 2
-        edges["bottom"] = y - self.tool_rel_height / 2
-        edges["right"] = x + self.tool_rel_width / 2
+        edges_and_centers["top"] = y + self.tool_rel_height / 2
+        edges_and_centers["left"] = x - self.tool_rel_width / 2
+        edges_and_centers["bottom"] = y - self.tool_rel_height / 2
+        edges_and_centers["right"] = x + self.tool_rel_width / 2
 
-        return edges
+        edges_and_centers["horizontal"] = x
+        edges_and_centers["vertical"] = y
+
+        return edges_and_centers
+
+
+def get_merges(comp: Comp) -> list[Align] | None:
+    merges = comp.GetToolList(True, "Merge").values()
+    if not merges:
+        return None
+    merges_and_tools = [Align(merge) for merge in merges]
+    return merges_and_tools
 
 
 # Align funcs
-def align_left(object: Align, edge: float) -> None:
+def align_left_edges(object: Align, edge: float) -> None:
     x = edge + object.tool_rel_width / 2 - object.tool_offset_in_merge[0]
-    y = object.merge.GetInput("Center")[2]
+    y = object.merge_current_y
 
     object.merge.SetInput("Center", [x, y])
 
 
-def align_right(object: Align, edge: float) -> None:
+def align_right_edges(object: Align, edge: float) -> None:
     x = edge - object.tool_rel_width / 2 - object.tool_offset_in_merge[0]
-    y = object.merge.GetInput("Center")[2]
+    y = object.merge_current_y
 
     object.merge.SetInput("Center", [x, y])
 
 
-def align_top(object: Align, edge: float) -> None:
-    x = object.merge.GetInput("Center")[1]
+def align_top_edges(object: Align, edge: float) -> None:
+    x = object.merge_current_x
     y = edge - object.tool_rel_height / 2 - object.tool_offset_in_merge[1]
 
     object.merge.SetInput("Center", [x, y])
 
 
-def align_bottom(object: Align, edge: float) -> None:
-    x = object.merge.GetInput("Center")[1]
+def align_bottom_edges(object: Align, edge: float) -> None:
+    x = object.merge_current_x
     y = edge + object.tool_rel_height / 2 - object.tool_offset_in_merge[1]
 
     object.merge.SetInput("Center", [x, y])
 
 
+def align_horizontal_centers(object: Align, center: float) -> None:
+    x = object.merge_current_x
+    y = center - object.tool_offset_in_merge[1]
+
+    object.merge.SetInput("Center", [x, y])
+
+
+def align_vertical_centers(object: Align, center: float) -> None:
+    x = center - object.tool_offset_in_merge[0]
+    y = object.merge_current_y
+
+    object.merge.SetInput("Center", [x, y])
+
+
+ALIGN_FUNCS: dict[str, tuple[Callable, Callable]] = {
+    "top": (max, align_top_edges),
+    "bottom": (min, align_bottom_edges),
+    "left": (min, align_left_edges),
+    "right": (max, align_right_edges),
+    "horizontal": (lambda x: (max(x) - min(x)) / 2 + min(x), align_horizontal_centers),
+    "vertical": (lambda x: (max(x) - min(x)) / 2 + min(x), align_vertical_centers),
+}
+
+# General align
 def align_all(key: str):
-    if key not in ["top", "left", "bottom", "right"]:
-        print("Please select a correct key.")
+    global comp, ALIGN_FUNCS
+
+    if key not in ALIGN_FUNCS:
         return
 
-    global comp
-
-    selected_merges = get_merges(comp)
-
-    if not selected_merges:
-        print("No selected merges.")
+    align_objects = get_merges(comp)
+    if not align_objects:
         return
 
-    align_objects = [Align(merge) for merge in selected_merges]
+    edges_or_centers = [object.edges_and_centers[key] for object in align_objects]
+
+    edge_func = ALIGN_FUNCS[key][0]
+    edge_or_center = edge_func(edges_or_centers)
+
+    align_func = ALIGN_FUNCS[key][1]
 
     comp.Lock()
-    if key in ["top", "right"]:
-        edge = max([object.edges[key] for object in align_objects])
 
-        for obj in align_objects:
-            if key == "right":
-                align_right(obj, edge)
-            else:
-                align_top(obj, edge)
+    for obj in align_objects:
+        align_func(obj, edge_or_center)
 
-    else:
-        edge = min([object.edges[key] for object in align_objects])
-
-        for obj in align_objects:
-            if key == "left":
-                align_left(obj, edge)
-            else:
-                align_bottom(obj, edge)
     comp.Unlock()
 
 
@@ -234,28 +255,61 @@ def align_all(key: str):
 def distribute_horizontally() -> None:
     global comp
 
-    selected_merges = get_merges(comp)
-
-    if not selected_merges:
-        print("No selected merges.")
+    align_objects = get_merges(comp)
+    if not align_objects:
         return
 
-    align_objects = [Align(merge) for merge in selected_merges]
+    def by_edge(object: Align):
+        return object.edges_and_centers["left"]
 
-    left_edge = min([obj.edges["left"] for obj in align_objects])
-    right_edge = max([obj.edges["right"] for obj in align_objects])
+    align_objects.sort(key=by_edge)
+
+    left_edge = min([obj.edges_and_centers["left"] for obj in align_objects])
+    right_edge = max([obj.edges_and_centers["right"] for obj in align_objects])
     canvas_width = right_edge - left_edge
 
     total_tool_width = sum([obj.tool_rel_width for obj in align_objects])
     gutter = (canvas_width - total_tool_width) / (len(align_objects) - 1)
 
+    comp.Lock()
     for idx, object in enumerate(align_objects):
         if idx == 0 or idx == len(align_objects) - 1:
-            edge = object.edges["right"] + gutter
+            edge = object.edges_and_centers["right"] + gutter
             continue
         else:
-            align_left(object, edge)
-        edge = object.edges["right"] + gutter
+            align_left_edges(object, edge)
+        edge = object.edges_and_centers["right"] + gutter
+    comp.Unlock()
+
+
+def distribute_vertically() -> None:
+    global comp
+
+    align_objects = get_merges(comp)
+    if not align_objects:
+        return
+
+    def by_edge(object: Align):
+        return object.edges_and_centers["bottom"]
+
+    align_objects.sort(key=by_edge)
+
+    bottom_edge = min([obj.edges_and_centers["bottom"] for obj in align_objects])
+    top_edge = max([obj.edges_and_centers["top"] for obj in align_objects])
+    canvas_height = top_edge - bottom_edge
+
+    total_tool_height = sum([obj.tool_rel_height for obj in align_objects])
+    gutter = (canvas_height - total_tool_height) / (len(align_objects) - 1)
+
+    comp.Lock()
+    for idx, object in enumerate(align_objects):
+        if idx == 0 or idx == len(align_objects) - 1:
+            edge = object.edges_and_centers["top"] + gutter
+            continue
+        else:
+            align_bottom_edges(object, edge)
+        edge = object.edges_and_centers["top"] + gutter
+    comp.Unlock()
 
 
 # UI funcs
@@ -293,10 +347,19 @@ class App:
         buttons["right"].grid(padx=30, column=2, row=1)
         buttons["bottom"].pack(padx=30, pady=30)
 
-        distrubute_button = tk.Button(
+        center_buttons = create_buttons(root, ["horizontal", "vertical"])
+        for button in center_buttons.values():
+            button.pack(pady=30)
+
+        distrubute_h_button = tk.Button(
             text="Distribute horizontally", command=distribute_horizontally
         )
-        distrubute_button.pack()
+        distrubute_h_button.pack(pady=30)
+
+        distrubute_v_button = tk.Button(
+            text="Distribute vertically", command=distribute_vertically
+        )
+        distrubute_v_button.pack(pady=30)
 
         root.mainloop()
 
