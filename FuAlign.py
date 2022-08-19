@@ -1,26 +1,33 @@
+from __future__ import annotations
 from dataclasses import dataclass
 import tkinter as tk
-from fa_backend import Tool, Comp, Fusion
 
-NEG_MILL = -1_000_000
-EMPTY_DATA_WINDOW = {1: NEG_MILL, 2: NEG_MILL, 3: NEG_MILL, 4: NEG_MILL}
-
-
-def initialize_fake_fusion():
-    print("Initializing fake Fusion.")
-    global fusion, comp
-    fusion = Fusion()
-    comp = Comp()
-
-
+# For testing inside VSCode.
 try:
-    fusion
-except NameError:
-    initialize_fake_fusion()
+    from fa_backend import Tool, Comp, Fusion
 
-# Get tool from merge
+    try:
+        fusion
+    except NameError:
+        print("Initializing fake Fusion.")
+        fusion = Fusion()
+        comp = Comp()
+
+except ModuleNotFoundError:
+    pass
+
+# Constant for DataWindow Error.
+NEG_MILL = -1_000_000
+EMPTY_DATA_WINDOW = {key + 1: NEG_MILL for key in range(4)}
+
+
+# Get tool from merge.
 def get_tool(merge: Tool):
     return merge.Foreground.GetConnectedOutput().GetTool()
+
+
+def get_merges(comp: Comp) -> list[Tool]:
+    return comp.GetToolList(True, "Merge").values()
 
 
 @dataclass
@@ -144,6 +151,7 @@ class Align:
 
     @property
     def edges(self) -> dict[str, float]:
+        """Returns normalized edge positions (top, left, bottom, right) for tool in merge"""
         edges = {}
         x_offset, y_offset = self.tool_offset_in_merge
         x = x_offset + self.current_x
@@ -157,7 +165,7 @@ class Align:
         return edges
 
 
-# Align left
+# Align funcs
 def align_left(object: Align, edge: float) -> None:
     x = edge + object.tool_rel_width / 2 - object.tool_offset_in_merge[0]
     y = object.merge.GetInput("Center")[2]
@@ -193,7 +201,7 @@ def align_all(key: str):
 
     global comp
 
-    selected_merges = comp.GetToolList(True, "Merge").values()
+    selected_merges = get_merges(comp)
 
     if not selected_merges:
         print("No selected merges.")
@@ -222,6 +230,35 @@ def align_all(key: str):
     comp.Unlock()
 
 
+# Distribute funcs
+def distribute_horizontally() -> None:
+    global comp
+
+    selected_merges = get_merges(comp)
+
+    if not selected_merges:
+        print("No selected merges.")
+        return
+
+    align_objects = [Align(merge) for merge in selected_merges]
+
+    left_edge = min([obj.edges["left"] for obj in align_objects])
+    right_edge = max([obj.edges["right"] for obj in align_objects])
+    canvas_width = right_edge - left_edge
+
+    total_tool_width = sum([obj.tool_rel_width for obj in align_objects])
+    gutter = (canvas_width - total_tool_width) / (len(align_objects) - 1)
+
+    for idx, object in enumerate(align_objects):
+        if idx == 0 or idx == len(align_objects) - 1:
+            edge = object.edges["right"] + gutter
+            continue
+        else:
+            align_left(object, edge)
+        edge = object.edges["right"] + gutter
+
+
+# UI funcs
 def create_buttons(root: tk.Tk, directions: list[str]) -> dict[str, tk.Button]:
     buttons = {}
 
@@ -239,7 +276,9 @@ class App:
     def run(self):
         root = tk.Tk()
         root.title("FuAlign")
-        horizontal = tk.Frame(root)
+        root.attributes("-topmost", True)
+
+        horizontal = tk.Frame(root, pady=15)
 
         buttons = create_buttons(root, ["top", "bottom"])
         buttons["left"], buttons["right"] = create_buttons(
@@ -247,12 +286,18 @@ class App:
         ).values()
 
         buttons["top"].pack(padx=30, pady=30)
+
         horizontal.pack()
-        buttons["left"].grid(padx=30, pady=30, column=1, row=1)
-        buttons["right"].grid(padx=30, pady=30, column=2, row=1)
+
+        buttons["left"].grid(padx=30, column=1, row=1)
+        buttons["right"].grid(padx=30, column=2, row=1)
         buttons["bottom"].pack(padx=30, pady=30)
 
-        root.attributes("-topmost", True)
+        distrubute_button = tk.Button(
+            text="Distribute horizontally", command=distribute_horizontally
+        )
+        distrubute_button.pack()
+
         root.mainloop()
 
 
