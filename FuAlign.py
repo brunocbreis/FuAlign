@@ -17,6 +17,10 @@ try:
 except ModuleNotFoundError:
     pass
 
+# =========================================================================== #
+# ========================     BACKEND    =================================== #
+# =========================================================================== #
+
 # Constant for DataWindow Error.
 NEG_MILL = -1_000_000
 EMPTY_DATA_WINDOW = {key + 1: NEG_MILL for key in range(4)}
@@ -173,7 +177,7 @@ def get_merges(comp: Comp) -> list[Align] | None:
     return merges_and_tools
 
 
-# Align funcs
+# Align edges funcs
 def align_left_edges(object: Align, edge: float) -> None:
     x = edge + object.tool_rel_width / 2 - object.tool_offset_in_merge[0]
     y = object.merge_current_y
@@ -202,62 +206,24 @@ def align_bottom_edges(object: Align, edge: float) -> None:
     object.merge.SetInput("Center", [x, y])
 
 
+# Align centers funcs
 def align_horizontal_centers(object: Align, center: float) -> None:
-    x = object.merge_current_x
-    y = center - object.tool_offset_in_merge[1]
-
-    object.merge.SetInput("Center", [x, y])
-
-
-def align_vertical_centers(object: Align, center: float) -> None:
     x = center - object.tool_offset_in_merge[0]
     y = object.merge_current_y
 
     object.merge.SetInput("Center", [x, y])
 
 
-ALIGN_FUNCS: dict[str, tuple[Callable, Callable]] = {
-    "top": (max, align_top_edges),
-    "bottom": (min, align_bottom_edges),
-    "left": (min, align_left_edges),
-    "right": (max, align_right_edges),
-    "horizontal": (lambda x: (max(x) - min(x)) / 2 + min(x), align_horizontal_centers),
-    "vertical": (lambda x: (max(x) - min(x)) / 2 + min(x), align_vertical_centers),
-}
+def align_vertical_centers(object: Align, center: float) -> None:
+    x = object.merge_current_x
+    y = center - object.tool_offset_in_merge[1]
 
-# General align
-def align_all(key: str):
-    global comp, ALIGN_FUNCS
-
-    if key not in ALIGN_FUNCS:
-        return
-
-    align_objects = get_merges(comp)
-    if not align_objects:
-        return
-
-    edges_or_centers = [object.edges_and_centers[key] for object in align_objects]
-
-    edge_func = ALIGN_FUNCS[key][0]
-    edge_or_center = edge_func(edges_or_centers)
-
-    align_func = ALIGN_FUNCS[key][1]
-
-    comp.Lock()
-
-    for obj in align_objects:
-        align_func(obj, edge_or_center)
-
-    comp.Unlock()
+    object.merge.SetInput("Center", [x, y])
 
 
 # Distribute funcs
-def distribute_horizontally() -> None:
+def distribute_horizontally(align_objects: list[Align]) -> None:
     global comp
-
-    align_objects = get_merges(comp)
-    if not align_objects:
-        return
 
     def by_edge(object: Align):
         return object.edges_and_centers["left"]
@@ -282,12 +248,8 @@ def distribute_horizontally() -> None:
     comp.Unlock()
 
 
-def distribute_vertically() -> None:
+def distribute_vertically(align_objects: list[Align]) -> None:
     global comp
-
-    align_objects = get_merges(comp)
-    if not align_objects:
-        return
 
     def by_edge(object: Align):
         return object.edges_and_centers["bottom"]
@@ -312,56 +274,321 @@ def distribute_vertically() -> None:
     comp.Unlock()
 
 
-# UI funcs
-def create_buttons(root: tk.Tk, directions: list[str]) -> dict[str, tk.Button]:
-    buttons = {}
+FUALIGN_FUNCS: dict[str, tuple[Callable, Callable]] = {
+    "top": (max, align_top_edges),
+    "bottom": (min, align_bottom_edges),
+    "left": (min, align_left_edges),
+    "right": (max, align_right_edges),
+    "horizontal": (lambda x: (max(x) - min(x)) / 2 + min(x), align_horizontal_centers),
+    "vertical": (lambda x: (max(x) - min(x)) / 2 + min(x), align_vertical_centers),
+    "horizontally": distribute_horizontally,
+    "vertically": distribute_vertically,
+}
 
-    for direction in directions:
-        button = tk.Button(
-            root,
-            text=f"Align {direction}",
-            command=lambda key=direction: align_all(key),
+
+# MAIN FUALIGN FUNCTION
+def fualign(key: str):
+    global comp, FUALIGN_FUNCS
+
+    if key not in FUALIGN_FUNCS:
+        return
+
+    align_objects = get_merges(comp)
+    if not align_objects:
+        return
+
+    if key in ["horizontally", "vertically"]:
+        FUALIGN_FUNCS[key](align_objects)
+        return
+
+    edges_or_centers = [object.edges_and_centers[key] for object in align_objects]
+
+    edge_func = FUALIGN_FUNCS[key][0]
+    edge_or_center = edge_func(edges_or_centers)
+
+    align_func = FUALIGN_FUNCS[key][1]
+
+    comp.Lock()
+
+    for obj in align_objects:
+        align_func(obj, edge_or_center)
+
+    comp.Unlock()
+
+
+# =========================================================================== #
+# ########################################################################### #
+
+# =========================================================================== #
+# ========================    FRONTEND    =================================== #
+# =========================================================================== #
+class Color:
+    HOVER = "#c1c1c1"
+    NORMAL = "#868686"
+    ACTIVE = "#f1f1f1"
+    CANVAS_BG = "#252525"
+    TEXT = "#A3A3A3"
+
+
+class Font:
+    DEFAULT = "TkTextFont"
+    TOOLTIP_BOLD = "TkTooltipFont 12 bold"
+    TOOLTIP = "TkTooltipFont 12"
+
+
+@dataclass
+class UIRow:
+    parent: tk.Widget
+    frame: tk.Frame
+    name: str
+
+    def __post_init__(self):
+        self.title_var = tk.StringVar()
+        self.title = tk.Label(
+            self.frame,
+            textvariable=self.title_var,
+            width=20,
+            height=1 if self.name in ["header", "footer"] else 2,
+            anchor=tk.SW,
+            padx=5,
+            pady=0 if self.name in ["header", "footer"] else 5,
         )
-        buttons[direction] = button
-    return buttons
+        self.title.grid(column=1, columnspan=4, row=1, sticky=tk.W)
+
+    def describe(self, name: str, key: str = None):
+        words_in_name = self.name.split()
+        two_words = len(words_in_name) > 1
+
+        if name:
+            name = f" {name}"
+
+        self.title_var.set(
+            f"{words_in_name[0].capitalize()}{name}"
+            f" {words_in_name[-1] if two_words else ''}{f' [{key}]' if key else ''}"
+        )
+
+
+@dataclass
+class UIElement:
+    parent: UIRow
+    name: str
+    row: int
+    col: int
+    canvas: tk.Canvas = None
+    icon_dims: list[tuple] = None
+    key: str = None
+
+    def describe(self, event):
+        self.parent.describe(self.name, self.key)
+
+    def undescribe(self, event):
+        self.parent.describe("")
+
+    # Creates rectangle from normalized dimensions instead of absolute coordinates.
+    def draw_rect(
+        self,
+        width: float,
+        height: float,
+        x: float,
+        y: float,
+        **configs,
+    ) -> int:
+
+        multiplier = self.canvas.winfo_width()
+
+        x0 = x * multiplier
+        x1 = (x + width) * multiplier
+        y0 = y * multiplier
+        y1 = (y + height) * multiplier
+
+        return self.canvas.create_rectangle(x0, y0, x1, y1, **configs)
+
+    # Creates all rectangles necessary to draw each icon
+    def draw_icon(self, **config) -> None:
+        for dim in self.icon_dims:
+            self.draw_rect(*dim, **config)
+        set_hover_style(self.canvas)
+
+
+# Button style event handlers  ======================================
+def on_hover(event: tk.Event):
+    canvas: tk.Canvas = event.widget
+    canvas.itemconfig("icon", fill=Color.HOVER)
+
+
+def on_leave(event: tk.Event):
+    canvas: tk.Canvas = event.widget
+    canvas.itemconfig("icon", fill=Color.NORMAL)
+
+
+def on_click(event: tk.Event):
+    canvas: tk.Canvas = event.widget
+    canvas.itemconfig("icon", fill=Color.ACTIVE)
+
+
+def set_hover_style(canvas: tk.Canvas):
+    canvas.bind("<Enter>", on_hover)
+    canvas.bind("<Leave>", on_leave)
+    canvas.bind("<Button-1>", on_click)
+    canvas.bind("<ButtonRelease-1>", on_hover)
+
+
+# Dict of dimensions for drawing the icons. (width, height, x, y)
+ICON_DIMS = {
+    "left": [
+        (0.1, 1, 0.05, 0),  # line
+        (0.7, 0.3, 0.25, 0.15),  # rect1
+        (0.5, 0.3, 0.25, 0.55),  # rect 2
+    ],
+    "horizontal": [
+        (0.1, 1, 0.45, 0),  # line
+        (0.5, 0.3, 0.25, 0.15),  # rect1
+        (0.7, 0.3, 0.15, 0.55),  # rect2
+    ],
+    "right": [
+        (0.1, 1, 0.85, 0),  # line
+        (0.7, 0.3, 0.05, 0.15),  # rect1
+        (0.5, 0.3, 0.25, 0.55),  # rect2
+    ],
+    "vertically": [
+        (1, 0.1, 0, 0.1),  # line1
+        (0.6, 0.3, 0.2, 0.35),  # rect1
+        (1, 0.1, 0, 0.8),  # line2
+    ],
+    "top": [
+        (1, 0.1, 0, 0.05),  # line
+        (0.3, 0.7, 0.15, 0.25),  # rect1
+        (0.3, 0.5, 0.55, 0.25),  # rect 2
+    ],
+    "vertical": [
+        (1, 0.1, 0, 0.45),  # line
+        (0.3, 0.5, 0.15, 0.25),  # rect1
+        (0.3, 0.7, 0.55, 0.15),  # rect2
+    ],
+    "bottom": [
+        (1, 0.1, 0, 0.85),  # line
+        (0.3, 0.7, 0.15, 0.05),  # rect1
+        (0.3, 0.5, 0.55, 0.25),  # rect2
+    ],
+    "horizontally": [
+        (0.1, 1, 0.1, 0),  # line1
+        (0.3, 0.6, 0.35, 0.2),  # rect1
+        (0.1, 1, 0.8, 0),  # line2
+    ],
+}
+
+# Dict of keyboard shortcuts
+KEYS = dict(
+    top="T",
+    left="L",
+    right="R",
+    bottom="B",
+    vertical="V",
+    horizontal="H",
+    vertically="⌥V",
+    horizontally="⌥H",
+)
 
 
 class App:
-    def run(self):
+    APP_ROWS = {
+        "header": None,
+        "align edges": ["left", "top", "bottom", "right"],
+        "align centers": ["vertical", "horizontal"],
+        "distribute": ["vertically", "horizontally"],
+        "footer": None,
+    }
+
+    def build(self):
         root = tk.Tk()
+        self.root = root
+
+        # Appearance.
+        root.configure(background=Color.CANVAS_BG)
         root.title("FuAlign")
+        root.resizable(False, False)
         root.attributes("-topmost", True)
+        root.option_add("*background", Color.CANVAS_BG)
+        root.option_add("*foreground", Color.TEXT)
 
-        horizontal = tk.Frame(root, pady=15)
+        # Setting up layout.
+        root.rowconfigure(index=1, weight=0)  # HEADER ROW
+        root.rowconfigure(index=2, weight=1)  # ALIGN EDGES ROW
+        root.rowconfigure(index=3, weight=1)  # ALIGN CENTERS ROW
+        root.rowconfigure(index=4, weight=1)  # DISTRIBUTE ROW
+        root.rowconfigure(index=5, weight=0)  # FOOTER ROW
 
-        buttons = create_buttons(root, ["top", "bottom"])
-        buttons["left"], buttons["right"] = create_buttons(
-            horizontal, ["left", "right"]
-        ).values()
+        # Creating UIRows.
+        self.ui_rows: dict[str, UIRow] = {}
+        for row in self.APP_ROWS:
+            ui_row = UIRow(self.root, tk.Frame(padx=10), row)
+            self.ui_rows[row] = ui_row
+            if self.APP_ROWS[row]:
+                ui_row.title_var.set(row.capitalize())
 
-        buttons["top"].pack(padx=30, pady=30)
+        for idx, row in enumerate(self.ui_rows.values()):
+            row.frame.grid(row=idx + 1)
 
-        horizontal.pack()
+        # Configuring row grids.
+        for row in self.ui_rows.values():
+            row.frame.rowconfigure(index=1, weight=0)
+            row.frame.rowconfigure(index=2, weight=1)
 
-        buttons["left"].grid(padx=30, column=1, row=1)
-        buttons["right"].grid(padx=30, column=2, row=1)
-        buttons["bottom"].pack(padx=30, pady=30)
+            row.frame.columnconfigure(index=1, weight=0)
+            row.frame.columnconfigure(index=2, weight=0)
+            row.frame.columnconfigure(index=3, weight=0)
+            row.frame.columnconfigure(index=4, weight=1)
 
-        center_buttons = create_buttons(root, ["horizontal", "vertical"])
-        for button in center_buttons.values():
-            button.pack(pady=30)
+        # Creating UIElements.
+        self.ui_elements: dict[str, UIElement] = {}
+        for row_name, elements in self.APP_ROWS.items():
+            if elements:
+                for idx, element in enumerate(elements):
+                    ui_element = UIElement(
+                        parent=self.ui_rows[row_name], name=element, row=2, col=idx + 1
+                    )
+                    ui_element.icon_dims = ICON_DIMS[ui_element.name]
 
-        distrubute_h_button = tk.Button(
-            text="Distribute horizontally", command=distribute_horizontally
-        )
-        distrubute_h_button.pack(pady=30)
+                    self.ui_elements[ui_element.name] = ui_element
 
-        distrubute_v_button = tk.Button(
-            text="Distribute vertically", command=distribute_vertically
-        )
-        distrubute_v_button.pack(pady=30)
+        # Adding keys to UIElements.
+        for key, el in self.ui_elements.items():
+            if key in KEYS:
+                el.key = KEYS[key]
 
-        root.mainloop()
+        # Creating Canvases for the icons
+        for el in self.ui_elements.values():
+            el.canvas = tk.Canvas(
+                el.parent.frame,
+                width=20,
+                height=20,
+                background=Color.CANVAS_BG,
+                highlightthickness=0,
+                relief="ridge",
+                bd=0,
+            )
+            el.canvas.grid(row=el.row, column=el.col, sticky=tk.W, padx=10, pady=5)
+
+        # Updates canvas before drawing icons.
+        for el in self.ui_elements.values():
+            el.canvas.update()
+
+        # Draws icons.
+        for el in self.ui_elements.values():
+            el.draw_icon(fill=Color.NORMAL, outline=Color.CANVAS_BG, tag="icon")
+
+        # Binds canvases.
+        for el in self.ui_elements.values():
+            el.canvas.bind("<Enter>", el.describe, add="+")
+            el.canvas.bind("<Leave>", el.undescribe, add="+")
+            el.canvas.bind(
+                "<ButtonRelease-1>", lambda e, key=el.name: fualign(key), add="+"
+            )
+
+    def run(self):
+        self.build()
+
+        self.root.mainloop()
 
 
 if __name__ == "__main__":
