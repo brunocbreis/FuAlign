@@ -485,9 +485,28 @@ KEYS = dict(
     bottom="B",
     vertical="V",
     horizontal="H",
-    vertically="⌥V",
-    horizontally="⌥H",
+    vertically="⇧V",
+    horizontally="⇧H",
 )
+
+
+def parse_key(key: str) -> list[str]:
+    events = []
+    if "⇧" in key:
+        modifier = "Shift"
+        key = key[-1]
+        upper_and_lower = False
+    else:
+        modifier = "Key"
+        upper_and_lower = True
+
+    if not upper_and_lower:
+        return [f"<{modifier}-{key}>"]
+    return [f"<{modifier}-{key}>", f"<{modifier}-{key.lower()}>"]
+
+
+PARSED_KEYS = {key: parse_key(value) for key, value in KEYS.items()}
+print(PARSED_KEYS)
 
 
 class App:
@@ -584,6 +603,25 @@ class App:
             el.canvas.bind(
                 "<ButtonRelease-1>", lambda e, key=el.name: fualign(key), add="+"
             )
+
+        # Binds root for keyboard shortcuts
+        for name, shortcuts in PARSED_KEYS.items():
+            for shortcut in shortcuts:
+                root.bind(shortcut, lambda e, key=name: fualign(key))
+
+        # Window size and position
+        window_width = root.winfo_width()
+        window_height = root.winfo_height()
+
+        # get the screen dimension
+        screen_width = root.winfo_screenwidth()
+        screen_height = root.winfo_screenheight()
+
+        # find the center point
+        x = int((screen_width / 2 - window_width / 2))
+        y = int((screen_height / 2 - window_height / 2))
+
+        root.geometry(f"{window_width}x{window_height}+{x}+{y}")
 
     def run(self):
         self.build()
