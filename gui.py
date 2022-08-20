@@ -27,7 +27,7 @@ class UIRow:
         self.title = tk.Label(
             self.frame,
             textvariable=self.title_var,
-            width=18,
+            width=20,
             height=1 if self.name in ["header", "footer"] else 2,
             anchor=tk.SW,
             padx=5,
@@ -35,7 +35,7 @@ class UIRow:
         )
         self.title.grid(column=1, columnspan=4, row=1, sticky=tk.W)
 
-    def describe(self, name: str):
+    def describe(self, name: str, key: str = None):
         words_in_name = self.name.split()
         two_words = len(words_in_name) > 1
 
@@ -43,7 +43,8 @@ class UIRow:
             name = f" {name}"
 
         self.title_var.set(
-            f"{words_in_name[0].capitalize()}{name} {words_in_name[-1] if two_words else ''}"
+            f"{words_in_name[0].capitalize()}{name}"
+            f" {words_in_name[-1] if two_words else ''}{f' [{key}]' if key else ''}"
         )
 
 
@@ -55,9 +56,10 @@ class UIElement:
     col: int
     canvas: tk.Canvas = None
     icon_dims: list[tuple] = None
+    key: str = None
 
     def describe(self, event):
-        self.parent.describe(self.name)
+        self.parent.describe(self.name, self.key)
 
     def undescribe(self, event):
         self.parent.describe("")
@@ -155,6 +157,17 @@ ICON_DIMS = {
     ],
 }
 
+KEYS = dict(
+    top="T",
+    left="L",
+    right="R",
+    bottom="B",
+    vertical="V",
+    horizontal="H",
+    vertically="⌥V",
+    horizontally="⌥H",
+)
+
 
 class App:
     APP_ROWS = {
@@ -215,6 +228,11 @@ class App:
                     ui_element.icon_dims = ICON_DIMS[ui_element.name]
 
                     self.ui_elements[ui_element.name] = ui_element
+
+        # Adding keys to UIElements.
+        for key, el in self.ui_elements.items():
+            if key in KEYS:
+                el.key = KEYS[key]
 
         # Creating Canvases for the icons
         for el in self.ui_elements.values():
