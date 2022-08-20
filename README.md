@@ -33,4 +33,4 @@ DaVinci Resolve: `[user]/Library/Application Support/Blackmagic Design/DaVinci R
 Fusion Studio: `[user]/Library/Application Support/Blackmagic Design/Fusion Studio/Scripts/Comp`
 </details>
 
-Then, from **DaVinci Resolve**, while in the Fusion Page, you can go to `Workspace > Scripts > Comp > SplitScreener` and run the *SplitScreener* app from there. In **Fusion Studio**, the *SplitScreener* folder will be directly under the `Scripts > Comp` menu.
+Then, from **DaVinci Resolve**, while in the Fusion Page, you can go to `Workspace > Scripts > Comp` and run the *FuAlign* script from there. In **Fusion Studio**, the path is `Scripts > Comp`.
