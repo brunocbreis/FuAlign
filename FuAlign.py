@@ -506,7 +506,6 @@ def parse_key(key: str) -> list[str]:
 
 
 PARSED_KEYS = {key: parse_key(value) for key, value in KEYS.items()}
-print(PARSED_KEYS)
 
 
 class App:
