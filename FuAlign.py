@@ -1,7 +1,7 @@
 from __future__ import annotations
 from dataclasses import dataclass
 import tkinter as tk
-from typing import Callable
+from typing import Callable, Protocol
 
 # For testing inside VSCode.
 try:
@@ -21,6 +21,7 @@ except ModuleNotFoundError:
 # ========================     BACKEND    =================================== #
 # =========================================================================== #
 
+
 # Constant for DataWindow Error.
 NEG_MILL = -1_000_000
 EMPTY_DATA_WINDOW = {key + 1: NEG_MILL for key in range(4)}
@@ -29,6 +30,9 @@ EMPTY_DATA_WINDOW = {key + 1: NEG_MILL for key in range(4)}
 # Get tool from merge.
 def get_tool(merge: Tool):
     return merge.Foreground.GetConnectedOutput().GetTool()
+
+
+HISTORY: list[dict[Tool, dict[int, float]]] = []
 
 
 @dataclass
@@ -175,6 +179,17 @@ def get_merges(comp: Comp) -> list[Align] | None:
         return None
     merges_and_tools = [Align(merge) for merge in merges]
     return merges_and_tools
+
+
+@dataclass
+class Operation(Protocol):
+    name: str
+    group: str
+    keyboard_shortcut: str
+    icon_dims: list[tuple]
+
+    def execute(self):
+        ...
 
 
 # Align edges funcs
