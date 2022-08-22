@@ -1,7 +1,7 @@
 !["FuAlign – Comp Script"](https://github.com/brunocbreis/FuAlign/blob/master/imgs/FuAlign_banner.png)
 
 
- ![version: 0.1](https://img.shields.io/badge/version-0.1-blue) ![works with DaVinci Resolve 18 and Fusion Studio 18](https://img.shields.io/badge/works%20with-DaVinci%20Resolve%2018%20%7C%20Fusion%20Studio%2018%20-lightgrey)  [!["Buy Me A Coffee"](https://img.shields.io/badge/-buy_me_a%C2%A0coffee-gray?logo=buy-me-a-coffee)](https://www.buymeacoffee.com/brunoreis)
+ ![version: 0.1](https://img.shields.io/badge/version-0.1-blue) ![requires Python 3.6+](https://img.shields.io/badge/works%20with-DaVinci%20Resolve%2018%20%7C%20Fusion%20Studio%2018%20-lightgrey) ![works with DaVinci Resolve 18 and Fusion Studio 18](https://img.shields.io/badge/requires-Python%203.6+-lightgreen)  [!["Buy Me A Coffee"](https://img.shields.io/badge/-buy_me_a%C2%A0coffee-gray?logo=buy-me-a-coffee)](https://www.buymeacoffee.com/brunoreis)
  
  ## It's just like in Photoshop. ☁️
  Ever wish Fusion had those pesky little buttons that help you align stuff on screen with a single click, just like in Adobe CC apps? 
