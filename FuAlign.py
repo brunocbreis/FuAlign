@@ -290,6 +290,10 @@ class Operation:
         global comp
         align_objects = get_merges(comp)
 
+        if not align_objects:
+            print("No merges selected.")
+            return
+
         # for distribute functions
         if not self.edge_func:
             self.align_func(align_objects)
