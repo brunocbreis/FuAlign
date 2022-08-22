@@ -1,7 +1,7 @@
 from __future__ import annotations
 from dataclasses import dataclass
 import tkinter as tk
-from typing import Callable, Protocol
+from typing import Callable
 
 # For testing inside VSCode.
 try:
@@ -27,11 +27,6 @@ NEG_MILL = -1_000_000
 EMPTY_DATA_WINDOW = {key + 1: NEG_MILL for key in range(4)}
 
 
-# Get tool from merge.
-def get_tool(merge: Tool):
-    return merge.Foreground.GetConnectedOutput().GetTool()
-
-
 HISTORY: list[dict[Tool, dict[int, float]]] = []
 
 
@@ -40,7 +35,10 @@ class Align:
     merge: Tool
 
     def __post_init__(self):
-        self.fg_tool = get_tool(self.merge)
+        self.fg_tool = self.get_tool()
+
+    def get_tool(self):
+        return self.merge.Foreground.GetConnectedOutput().GetTool()
 
     @property
     def tool_pixel_width(self):
@@ -181,17 +179,6 @@ def get_merges(comp: Comp) -> list[Align] | None:
     return merges_and_tools
 
 
-@dataclass
-class Operation(Protocol):
-    name: str
-    group: str
-    keyboard_shortcut: str
-    icon_dims: list[tuple]
-
-    def execute(self):
-        ...
-
-
 # Align edges funcs
 def align_left_edges(object: Align, edge: float) -> None:
     x = edge + object.tool_rel_width / 2 - object.tool_offset_in_merge[0]
@@ -289,46 +276,147 @@ def distribute_vertically(align_objects: list[Align]) -> None:
     comp.Unlock()
 
 
-FUALIGN_FUNCS: dict[str, tuple[Callable, Callable]] = {
-    "top": (max, align_top_edges),
-    "bottom": (min, align_bottom_edges),
-    "left": (min, align_left_edges),
-    "right": (max, align_right_edges),
-    "horizontal": (lambda x: (max(x) - min(x)) / 2 + min(x), align_horizontal_centers),
-    "vertical": (lambda x: (max(x) - min(x)) / 2 + min(x), align_vertical_centers),
-    "horizontally": distribute_horizontally,
-    "vertically": distribute_vertically,
-}
+@dataclass
+class Operation:
+    name: str
+    group: str
+    keyboard_shortcut: str
+    icon_dims: list[tuple]
+    align_func: Callable
+    edge_func: Callable = None
+    parsed_shortcuts: list[str] = None
 
+    def execute(self) -> None:
+        global comp
+        align_objects = get_merges(comp)
 
-# MAIN FUALIGN FUNCTION
-def fualign(key: str):
-    global comp, FUALIGN_FUNCS
+        # for distribute functions
+        if not self.edge_func:
+            self.align_func(align_objects)
+            return
 
-    if key not in FUALIGN_FUNCS:
+        edges_or_centers = [
+            object.edges_and_centers[self.name] for object in align_objects
+        ]
+
+        edge_or_center = self.edge_func(edges_or_centers)
+
+        comp.Lock()
+
+        for obj in align_objects:
+            self.align_func(obj, edge_or_center)
+
+        comp.Unlock()
+
         return
 
-    align_objects = get_merges(comp)
-    if not align_objects:
-        return
 
-    if key in ["horizontally", "vertically"]:
-        FUALIGN_FUNCS[key](align_objects)
-        return
+# CREATING OPERATIONS    ==================================================
+GROUPS = ["align edges", "align centers", "distribute"]
 
-    edges_or_centers = [object.edges_and_centers[key] for object in align_objects]
+OPERATIONS: dict[str, Operation] = {}
 
-    edge_func = FUALIGN_FUNCS[key][0]
-    edge_or_center = edge_func(edges_or_centers)
+OPERATIONS["top"] = Operation(
+    name="top",
+    group=GROUPS[0],
+    keyboard_shortcut="T",
+    icon_dims=[
+        (1, 0.1, 0, 0.05),  # line
+        (0.3, 0.7, 0.15, 0.25),  # rect1
+        (0.3, 0.5, 0.55, 0.25),  # rect 2
+    ],
+    align_func=align_top_edges,
+    edge_func=max,
+)
 
-    align_func = FUALIGN_FUNCS[key][1]
+OPERATIONS["bottom"] = Operation(
+    name="bottom",
+    group=GROUPS[0],
+    keyboard_shortcut="B",
+    icon_dims=[
+        (1, 0.1, 0, 0.85),  # line
+        (0.3, 0.7, 0.15, 0.05),  # rect1
+        (0.3, 0.5, 0.55, 0.25),  # rect2
+    ],
+    align_func=align_bottom_edges,
+    edge_func=min,
+)
 
-    comp.Lock()
+OPERATIONS["left"] = Operation(
+    name="left",
+    group=GROUPS[0],
+    keyboard_shortcut="L",
+    icon_dims=[
+        (0.1, 1, 0.05, 0),  # line
+        (0.7, 0.3, 0.25, 0.15),  # rect1
+        (0.5, 0.3, 0.25, 0.55),  # rect 2
+    ],
+    align_func=align_left_edges,
+    edge_func=min,
+)
 
-    for obj in align_objects:
-        align_func(obj, edge_or_center)
+OPERATIONS["right"] = Operation(
+    name="right",
+    group=GROUPS[0],
+    keyboard_shortcut="R",
+    icon_dims=[
+        (0.1, 1, 0.85, 0),  # line
+        (0.7, 0.3, 0.05, 0.15),  # rect1
+        (0.5, 0.3, 0.25, 0.55),  # rect2
+    ],
+    align_func=align_right_edges,
+    edge_func=max,
+)
 
-    comp.Unlock()
+OPERATIONS["horizontal"] = Operation(
+    name="horizontal",
+    group=GROUPS[1],
+    keyboard_shortcut="H",
+    icon_dims=[
+        (0.1, 1, 0.45, 0),  # line
+        (0.5, 0.3, 0.25, 0.15),  # rect1
+        (0.7, 0.3, 0.15, 0.55),  # rect2
+    ],
+    align_func=align_horizontal_centers,
+    edge_func=lambda x: (max(x) - min(x)) / 2 + min(x),
+)
+
+OPERATIONS["vertical"] = Operation(
+    name="vertical",
+    group=GROUPS[1],
+    keyboard_shortcut="V",
+    icon_dims=[
+        (1, 0.1, 0, 0.45),  # line
+        (0.3, 0.5, 0.15, 0.25),  # rect1
+        (0.3, 0.7, 0.55, 0.15),  # rect2
+    ],
+    align_func=align_vertical_centers,
+    edge_func=lambda x: (max(x) - min(x)) / 2 + min(x),
+)
+
+OPERATIONS["horizontally"] = Operation(
+    name="horizontally",
+    group=GROUPS[2],
+    keyboard_shortcut="⇧H",
+    icon_dims=[
+        (0.1, 1, 0.1, 0),  # line1
+        (0.3, 0.6, 0.35, 0.2),  # rect1
+        (0.1, 1, 0.8, 0),  # line2
+    ],
+    align_func=distribute_horizontally,
+)
+
+OPERATIONS["vertically"] = Operation(
+    name="vertically",
+    group=GROUPS[2],
+    keyboard_shortcut="⇧V",
+    icon_dims=[
+        (1, 0.1, 0, 0.1),  # line1
+        (0.6, 0.3, 0.2, 0.35),  # rect1
+        (1, 0.1, 0, 0.8),  # line2
+    ],
+    align_func=distribute_vertically,
+)
 
 
 # ########################################################################### #
@@ -388,9 +476,10 @@ class UIElement:
     name: str
     row: int
     col: int
+    operation: Operation
+    key: str
     canvas: tk.Canvas = None
     icon_dims: list[tuple] = None
-    key: str = None
 
     def describe(self, event):
         self.parent.describe(self.name, self.key)
@@ -447,63 +536,7 @@ def set_hover_style(canvas: tk.Canvas):
     canvas.bind("<ButtonRelease-1>", on_hover)
 
 
-# Dict of dimensions for drawing the icons. (width, height, x, y)
-ICON_DIMS = {
-    "left": [
-        (0.1, 1, 0.05, 0),  # line
-        (0.7, 0.3, 0.25, 0.15),  # rect1
-        (0.5, 0.3, 0.25, 0.55),  # rect 2
-    ],
-    "horizontal": [
-        (0.1, 1, 0.45, 0),  # line
-        (0.5, 0.3, 0.25, 0.15),  # rect1
-        (0.7, 0.3, 0.15, 0.55),  # rect2
-    ],
-    "right": [
-        (0.1, 1, 0.85, 0),  # line
-        (0.7, 0.3, 0.05, 0.15),  # rect1
-        (0.5, 0.3, 0.25, 0.55),  # rect2
-    ],
-    "vertically": [
-        (1, 0.1, 0, 0.1),  # line1
-        (0.6, 0.3, 0.2, 0.35),  # rect1
-        (1, 0.1, 0, 0.8),  # line2
-    ],
-    "top": [
-        (1, 0.1, 0, 0.05),  # line
-        (0.3, 0.7, 0.15, 0.25),  # rect1
-        (0.3, 0.5, 0.55, 0.25),  # rect 2
-    ],
-    "vertical": [
-        (1, 0.1, 0, 0.45),  # line
-        (0.3, 0.5, 0.15, 0.25),  # rect1
-        (0.3, 0.7, 0.55, 0.15),  # rect2
-    ],
-    "bottom": [
-        (1, 0.1, 0, 0.85),  # line
-        (0.3, 0.7, 0.15, 0.05),  # rect1
-        (0.3, 0.5, 0.55, 0.25),  # rect2
-    ],
-    "horizontally": [
-        (0.1, 1, 0.1, 0),  # line1
-        (0.3, 0.6, 0.35, 0.2),  # rect1
-        (0.1, 1, 0.8, 0),  # line2
-    ],
-}
-
-# Dict of keyboard shortcuts
-KEYS = dict(
-    top="T",
-    left="L",
-    right="R",
-    bottom="B",
-    vertical="V",
-    horizontal="H",
-    vertically="⇧V",
-    horizontally="⇧H",
-)
-
-
+# PARSE KEYBOARD SHORTCUTS
 def parse_key(key: str) -> list[str]:
     if "⇧" in key:
         modifier = "Shift"
@@ -518,7 +551,9 @@ def parse_key(key: str) -> list[str]:
     return [f"<{modifier}-{key}>", f"<{modifier}-{key.lower()}>"]
 
 
-PARSED_KEYS = {key: parse_key(value) for key, value in KEYS.items()}
+for operation in OPERATIONS.values():
+    shortcut = operation.keyboard_shortcut
+    operation.parsed_shortcuts = parse_key(shortcut)
 
 
 class App:
@@ -544,21 +579,29 @@ class App:
 
         # Setting up layout.
         root.rowconfigure(index=1, weight=0)  # HEADER ROW
-        root.rowconfigure(index=2, weight=1)  # ALIGN EDGES ROW
-        root.rowconfigure(index=3, weight=1)  # ALIGN CENTERS ROW
-        root.rowconfigure(index=4, weight=1)  # DISTRIBUTE ROW
-        root.rowconfigure(index=5, weight=0)  # FOOTER ROW
+
+        for idx in range(len(GROUPS)):
+            root.rowconfigure(index=idx + 2, weight=1)
+
+        root.rowconfigure(index=idx + 2, weight=0)  # FOOTER ROW
 
         # Creating UIRows.
+        header = tk.Frame(pady=10, height=10)
+        footer = tk.Label(pady=10, height=1)
+
         self.ui_rows: dict[str, UIRow] = {}
-        for row in self.APP_ROWS:
-            ui_row = UIRow(self.root, tk.Frame(padx=10), row)
-            self.ui_rows[row] = ui_row
-            if self.APP_ROWS[row]:
-                ui_row.title_var.set(row.capitalize())
+        for group_name in GROUPS:
+            ui_row = UIRow(self.root, tk.Frame(padx=10), group_name)
+            self.ui_rows[group_name] = ui_row
+            ui_row.title_var.set(group_name.capitalize())
+
+        # Gridding rows
+        header.grid(row=1)
 
         for idx, row in enumerate(self.ui_rows.values()):
-            row.frame.grid(row=idx + 1)
+            row.frame.grid(row=idx + 2)
+
+        footer.grid(row=idx + 3)
 
         # Configuring row grids.
         for row in self.ui_rows.values():
@@ -572,20 +615,20 @@ class App:
 
         # Creating UIElements.
         self.ui_elements: dict[str, UIElement] = {}
-        for row_name, elements in self.APP_ROWS.items():
-            if elements:
-                for idx, element in enumerate(elements):
-                    ui_element = UIElement(
-                        parent=self.ui_rows[row_name], name=element, row=2, col=idx + 1
-                    )
-                    ui_element.icon_dims = ICON_DIMS[ui_element.name]
 
-                    self.ui_elements[ui_element.name] = ui_element
-
-        # Adding keys to UIElements.
-        for key, el in self.ui_elements.items():
-            if key in KEYS:
-                el.key = KEYS[key]
+        for group in GROUPS:
+            operations = [op for op in OPERATIONS.values() if op.group == group]
+            for idx, operation in enumerate(operations):
+                ui_element = UIElement(
+                    parent=self.ui_rows[operation.group],
+                    name=operation.name,
+                    row=2,
+                    col=idx + 1,
+                    operation=operation,
+                    key=operation.keyboard_shortcut,
+                )
+                ui_element.icon_dims = operation.icon_dims
+                self.ui_elements[ui_element.name] = ui_element
 
         # Creating Canvases for the icons
         for el in self.ui_elements.values():
@@ -613,13 +656,16 @@ class App:
             el.canvas.bind("<Enter>", el.describe, add="+")
             el.canvas.bind("<Leave>", el.undescribe, add="+")
             el.canvas.bind(
-                "<ButtonRelease-1>", lambda e, key=el.name: fualign(key), add="+"
+                "<ButtonRelease-1>",
+                lambda e, name=el.name: OPERATIONS[name].execute(),
+                add="+",
             )
 
         # Binds root for keyboard shortcuts
-        for name, shortcuts in PARSED_KEYS.items():
+        for op in OPERATIONS.values():
+            name, shortcuts = op.name, op.parsed_shortcuts
             for shortcut in shortcuts:
-                root.bind(shortcut, lambda e, key=name: fualign(key))
+                root.bind(shortcut, lambda e, name=name: OPERATIONS[name].execute())
 
         # Window size and position
         window_width = root.winfo_width()
