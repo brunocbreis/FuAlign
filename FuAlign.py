@@ -557,14 +557,6 @@ for operation in OPERATIONS.values():
 
 
 class App:
-    APP_ROWS = {
-        "header": None,
-        "align edges": ["left", "top", "bottom", "right"],
-        "align centers": ["vertical", "horizontal"],
-        "distribute": ["vertically", "horizontally"],
-        "footer": None,
-    }
-
     def build(self):
         root = tk.Tk()
         self.root = root
