@@ -278,7 +278,8 @@ def distribute_vertically(align_objects: list[Align]) -> None:
 
 @dataclass
 class Operation:
-    name: str
+    id: str
+    full_name: str
     group: str
     keyboard_shortcut: str
     icon_dims: list[tuple]
@@ -300,16 +301,18 @@ class Operation:
             return
 
         edges_or_centers = [
-            object.edges_and_centers[self.name] for object in align_objects
+            object.edges_and_centers[self.id] for object in align_objects
         ]
 
         edge_or_center = self.edge_func(edges_or_centers)
 
         comp.Lock()
+        comp.StartUndo(f"FuAlign: {self.full_name}")
 
         for obj in align_objects:
             self.align_func(obj, edge_or_center)
 
+        comp.EndUndo(True)
         comp.Unlock()
 
         return
@@ -321,7 +324,8 @@ GROUPS = ["align edges", "align centers", "distribute"]
 OPERATIONS: dict[str, Operation] = {}
 
 OPERATIONS["top"] = Operation(
-    name="top",
+    id="top",
+    full_name="Align top edges",
     group=GROUPS[0],
     keyboard_shortcut="T",
     icon_dims=[
@@ -334,7 +338,8 @@ OPERATIONS["top"] = Operation(
 )
 
 OPERATIONS["bottom"] = Operation(
-    name="bottom",
+    id="bottom",
+    full_name="Align bottom edges",
     group=GROUPS[0],
     keyboard_shortcut="B",
     icon_dims=[
@@ -347,7 +352,8 @@ OPERATIONS["bottom"] = Operation(
 )
 
 OPERATIONS["left"] = Operation(
-    name="left",
+    id="left",
+    full_name="Align left edges",
     group=GROUPS[0],
     keyboard_shortcut="L",
     icon_dims=[
@@ -360,7 +366,8 @@ OPERATIONS["left"] = Operation(
 )
 
 OPERATIONS["right"] = Operation(
-    name="right",
+    id="right",
+    full_name="Align right edges",
     group=GROUPS[0],
     keyboard_shortcut="R",
     icon_dims=[
@@ -373,7 +380,8 @@ OPERATIONS["right"] = Operation(
 )
 
 OPERATIONS["horizontal"] = Operation(
-    name="horizontal",
+    id="horizontal",
+    full_name="Align horizontal centers",
     group=GROUPS[1],
     keyboard_shortcut="H",
     icon_dims=[
@@ -386,7 +394,8 @@ OPERATIONS["horizontal"] = Operation(
 )
 
 OPERATIONS["vertical"] = Operation(
-    name="vertical",
+    id="vertical",
+    full_name="Align vertical centers",
     group=GROUPS[1],
     keyboard_shortcut="V",
     icon_dims=[
@@ -399,7 +408,8 @@ OPERATIONS["vertical"] = Operation(
 )
 
 OPERATIONS["horizontally"] = Operation(
-    name="horizontally",
+    id="horizontally",
+    full_name="Distribute horizontally",
     group=GROUPS[2],
     keyboard_shortcut="⇧H",
     icon_dims=[
@@ -411,7 +421,8 @@ OPERATIONS["horizontally"] = Operation(
 )
 
 OPERATIONS["vertically"] = Operation(
-    name="vertically",
+    id="vertically",
+    full_name="Distribute vertically",
     group=GROUPS[2],
     keyboard_shortcut="⇧V",
     icon_dims=[
@@ -461,17 +472,11 @@ class UIRow:
         )
         self.title.grid(column=1, columnspan=4, row=1, sticky=tk.W)
 
-    def describe(self, name: str, key: str = None):
-        words_in_name = self.name.split()
-        two_words = len(words_in_name) > 1
-
-        if name:
-            name = f" {name}"
-
-        self.title_var.set(
-            f"{words_in_name[0].capitalize()}{name}"
-            f" {words_in_name[-1] if two_words else ''}{f' [{key}]' if key else ''}"
-        )
+    def describe(self, name: str):
+        if not name:
+            self.title_var.set(self.name.capitalize())
+            return
+        self.title_var.set(name)
 
 
 @dataclass
@@ -486,10 +491,14 @@ class UIElement:
     icon_dims: list[tuple] = None
 
     def describe(self, event):
-        self.parent.describe(self.name, self.key)
+        self.parent.describe(self.full_name)
 
     def undescribe(self, event):
         self.parent.describe("")
+
+    @property
+    def full_name(self):
+        return f"{self.operation.full_name} [{self.key}]"
 
     # Creates rectangle from normalized dimensions instead of absolute coordinates.
     def draw_rect(
@@ -617,7 +626,7 @@ class App:
             for idx, operation in enumerate(operations):
                 ui_element = UIElement(
                     parent=self.ui_rows[operation.group],
-                    name=operation.name,
+                    name=operation.id,
                     row=2,
                     col=idx + 1,
                     operation=operation,
@@ -659,7 +668,7 @@ class App:
 
         # Binds root for keyboard shortcuts
         for op in OPERATIONS.values():
-            name, shortcuts = op.name, op.parsed_shortcuts
+            name, shortcuts = op.id, op.parsed_shortcuts
             for shortcut in shortcuts:
                 root.bind(shortcut, lambda e, name=name: OPERATIONS[name].execute())
 
