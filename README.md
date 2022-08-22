@@ -13,7 +13,9 @@
  !["FuAlign user interface"](https://github.com/brunocbreis/FuAlign/blob/master/imgs/FuAlign_window.png) 
  
 ## How to install ⚙️
-Just download [this file](https://github.com/brunocbreis/FuAlign/releases/download/v0.1/FuAlign.py) and save it anywhere you'd like. To run the app, just drag it into Fusion any time you're working on a comp.
+First of all, make sure you have the [latest version of Python](https://www.python.org/downloads/) installed in your system. 🐍
+
+Then, download [this file](https://github.com/brunocbreis/FuAlign/releases/download/v0.2/FuAlign.py) and save it anywhere you'd like. To run the app, just drag it into Fusion any time you're working on a comp.
 
 If you prefer to run it directly from Fusion's or DaVinci Resolve's menu, these are the folders you should save it into:
 
